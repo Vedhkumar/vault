@@ -92,8 +92,8 @@ pub struct Deposit<'info> {
     pub vault: SystemAccount<'info>,
 
     #[account(
-       seeds = [b"vault", owner.key().as_ref()],
-       bump = vault_state.vault_bump
+       seeds = [b"state", owner.key().as_ref()],
+       bump = vault_state.state_bump
     )]
     pub vault_state: Account<'info, VaultState>,
     pub system_program: Program<'info, System>,
@@ -124,8 +124,8 @@ pub struct Withdraw<'info> {
     pub vault: SystemAccount<'info>,
 
     #[account(
-       seeds = [b"vault", owner.key().as_ref()],
-       bump = vault_state.vault_bump
+       seeds = [b"state", owner.key().as_ref()],
+       bump = vault_state.state_bump
     )]
     pub vault_state: Account<'info, VaultState>,
     pub system_program: Program<'info, System>,
@@ -134,10 +134,15 @@ pub struct Withdraw<'info> {
 impl<'info> Withdraw<'info> {
     fn withdraw(&self, amount: u64) -> Result<()> {
         // The data is sored in Rc<RefCell<T>> where Rc<T> means multiple variables can access the data and RefCell<T> mean the data can be mutated in order, This allows multiple mutable reference
-        let val = **self.vault.lamports.borrow();
-        assert!(
-            (val - amount) > Rent::get()?.minimum_balance(self.vault.to_account_info().data_len())
-        );
+
+        let rent_exempt = Rent::get()?.minimum_balance(self.vault.to_account_info().data_len());
+
+        let bal = self.vault.to_account_info().lamports();
+
+        if bal - amount < rent_exempt {
+            return Err(ErrorCode::InvalidAmount.into());
+        }
+
         let vault_state = self.vault_state.key();
         let signer_seeds: &[&[&[u8]]] = &[&[
             b"vault",
@@ -173,8 +178,8 @@ pub struct Close<'info> {
 
     #[account(
        mut,
-       seeds = [b"vault", owner.key().as_ref()],
-       bump = vault_state.vault_bump,
+       seeds = [b"state", owner.key().as_ref()],
+       bump = vault_state.state_bump,
        close = owner
     )]
     pub vault_state: Account<'info, VaultState>,
@@ -208,4 +213,9 @@ impl<'info> Close<'info> {
 pub struct VaultState {
     pub vault_bump: u8,
     pub state_bump: u8,
+}
+
+#[error_code]
+pub enum ErrorCode {
+    InvalidAmount,
 }
